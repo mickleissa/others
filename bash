@@ -6,26 +6,26 @@ cluster_arn=$(cluster_arn)
 project_env=$(project_env)
 module_name=$(module_name)
 
-# Get the last running task definition ARN
-last_task_def_arn=$(aws ecs describe-services \
-  --region $region \
-  --cluster $cluster_arn/$project_env-matterworx \
-  --services $project_env-$module_name-service \
-  --query "services[0].taskDefinition" \
+latest_task_def_arn=$(aws ecs list-task-definitions \
+  --family-prefix $project_env-$module_name-task \
+  --sort DESC \
+  --status ACTIVE \
+  --max-items 1 \
+  --query "taskDefinitionArns[0]" \
   --output text)
 
-# Check if the describe-services command was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to retrieve the last running task definition ARN"
+# Check if the list-task-definitions command was successful
+if [ $? -ne 0 ] || [ -z "$latest_task_def_arn" ]; then
+  echo "Error: Failed to retrieve the latest task definition ARN"
   exit 1
 fi
 
-# Update the ECS service with the last running task definition
+# Update the ECS service with the latest task definition
 update_output=$(aws ecs update-service \
   --region $region \
   --cluster $cluster_arn/$project_env-matterworx \
   --service $project_env-$module_name-service \
-  --task-definition $last_task_def_arn)
+  --task-definition $latest_task_def_arn)
 
 # Check if the update-service command was successful
 if [ $? -ne 0 ]; then
@@ -33,4 +33,4 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-echo "ECS service updated successfully"
+echo "ECS service updated successfully to task definition $latest_task_def_arn"
