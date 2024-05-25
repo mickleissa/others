@@ -20,11 +20,12 @@ latest_task_def_arn=$(aws ecs list-task-definitions \
   --status ACTIVE \
   --max-items 1 \
   --query "taskDefinitionArns[0]" \
-  --output text)
+  --output text 2>&1)
 
 # Check if the list-task-definitions command was successful
 if [ $? -ne 0 ]; then
   echo "Error: Failed to retrieve the latest task definition ARN"
+  echo "AWS CLI Output: $latest_task_def_arn"
   exit 1
 fi
 
@@ -42,7 +43,7 @@ update_output=$(aws ecs update-service \
   --region $region \
   --cluster $cluster_arn/$project_env-matterworx \
   --service $project_env-$module_name-service \
-  --task-definition $latest_task_def_arn)
+  --task-definition $latest_task_def_arn 2>&1)
 
 # Check if the update-service command was successful
 if [ $? -ne 0 ]; then
