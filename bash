@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Set your variables
-region=$(region)
-cluster_arn=$(cluster_arn)
-project_env=$(project_env)
-module_name=$(module_name)
+# Set your variables (hardcoded for now, replace with actual values)
+region="us-west-2"
+cluster_arn="arn:aws:ecs:us-west-2:123456789012:cluster/dev-matterworx"
+project_env="dev"
+module_name="app"
 
 echo "Starting ECS service update process..."
 echo "Region: $region"
@@ -20,12 +20,11 @@ latest_task_def_arn=$(aws ecs list-task-definitions \
   --status ACTIVE \
   --max-items 1 \
   --query "taskDefinitionArns[0]" \
-  --output text 2>&1)
+  --output text)
 
 # Check if the list-task-definitions command was successful
 if [ $? -ne 0 ]; then
   echo "Error: Failed to retrieve the latest task definition ARN"
-  echo "AWS CLI Output: $latest_task_def_arn"
   exit 1
 fi
 
@@ -37,13 +36,14 @@ fi
 
 echo "Latest task definition ARN retrieved: $latest_task_def_arn"
 
-# Update the ECS service with the latest task definition
-echo "Updating the ECS service with the latest task definition..."
+# Update the ECS service with the latest task definition and force new deployment
+echo "Updating the ECS service with the latest task definition and forcing new deployment..."
 update_output=$(aws ecs update-service \
   --region $region \
-  --cluster $cluster_arn/$project_env-matterworx \
+  --cluster $cluster_arn \
   --service $project_env-$module_name-service \
-  --task-definition $latest_task_def_arn 2>&1)
+  --task-definition $latest_task_def_arn \
+  --force-new-deployment)
 
 # Check if the update-service command was successful
 if [ $? -ne 0 ]; then
