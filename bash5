@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# Define your variables
+region="$1"
+cluster_arn="$2"
+project_env="$3"
+module_name="$4"
+task_def_arn="$5"
+
+# Update the ECS service
+update_service_output=$(aws --region "$region" ecs update-service \
+    --cluster "${cluster_arn}/${project_env}-matterworx" \
+    --service "${project_env}-${module_name}-service" \
+    --task-definition "${task_def_arn}/${project_env}-${module_name}-task")
+
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to update ECS service"
+    exit 1
+fi
+
+# Wait until the service is deployed, rolled back, or running for more than 5 minutes
+start_time=$(date +%s)
+timeout=300  # 5 minutes in seconds
+
+while true; do
+    # Get the current status of the service
+    service_status=$(aws --region "$region" ecs describe-services \
+        --cluster "${cluster_arn}/${project_env}-matterworx" \
+        --services "${project_env}-${module_name}-service" \
+        --query 'services[0].deployments[0].rolloutState' \
+        --output text)
+
+    # Check the time elapsed
+    current_time=$(date +%s)
+    elapsed_time=$((current_time - start_time))
+
+    # Check if the service is successfully deployed, rolled back, or if it exceeds the timeout
+    if [ "$service_status" == "COMPLETED" ]; then
+        echo "Deployment succeeded"
+        exit 0
+    elif [ "$service_status" == "FAILED" ]; then
+        echo "Error: Deployment failed"
+        exit 1
+    elif [ "$service_status" == "ROLLED_BACK" ]; then
+        echo "The task was not deployed and rolled back to the previous task"
+        exit 1
+    elif [ "$elapsed_time" -gt "$timeout" ]; then
+        echo "Error: Deployment in progress for more than 5 minutes"
+        exit 1
+    else
+        echo "Waiting for deployment to complete. Current status: $service_status"
+    fi
+
+    # Wait for a few seconds before checking again
+    sleep 10
+done
