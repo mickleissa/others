@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# Define your variables
+region="$1"
+cluster_arn="$2"
+project_env="$3"
+module_name="$4"
+task_def_arn="$5"
+
+# Update the ECS service
+update_service_output=$(aws --region "$region" ecs update-service \
+    --cluster "${cluster_arn}/${project_env}-matterworx" \
+    --service "${project_env}-${module_name}-service" \
+    --task-definition "${task_def_arn}/${project_env}-${module_name}-task")
+
+if [ $? -ne 0 ]; then
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - ERROR: Failed to update ECS service"
+    exit 1
+fi
+
+# Log the update service output
+echo "$(date +'%Y-%m-%d %H:%M:%S') - INFO: Update Service Output: $update_service_output"
+
+# Wait until the service is deployed, rolled back, or running for more than 5 minutes
+start_time=$(date +%s)
+timeout=300  # 5 minutes in seconds
+
+while true; do
+    # Get the current status of the service
+    service_description=$(aws --region "$region" ecs describe-services \
+        --cluster "${cluster_arn}/${project_env}-matterworx" \
+        --services "${project_env}-${module_name}-service" \
+        --query 'services[0]' \
+        --output json)
+
+    # Extract deployment details using awk, grep, and sed
+    service_status=$(echo $service_description | grep -o '"rolloutState": *"[^"]*"' | awk -F '"' '{print $4}')
+    deployment_id=$(echo $service_description | grep -o '"id": *"[^"]*"' | awk -F '"' '{print $4}')
+    deployment_status=$(echo $service_description | grep -o '"status": *"[^"]*"' | awk -F '"' '{print $4}')
+    desired_tasks=$(echo $service_description | grep -o '"desiredCount": *[^,]*' | awk -F ': ' '{print $2}')
+    pending_tasks=$(echo $service_description | grep -o '"pendingCount": *[^,]*' | awk -F ': ' '{print $2}')
+    running_tasks=$(echo $service_description | grep -o '"runningCount": *[^,]*' | awk -F ': ' '{print $2}')
+    rollout_state_reason=$(echo $service_description | grep -o '"rolloutStateReason": *"[^"]*"' | awk -F '"' '{print $4}')
+    current_time=$(date +'%Y-%m-%d %H:%M:%S')
+
+    # Log the current status, deployment ID, and current time
+    echo "[$current_time] - INFO: Deployment ID: $deployment_id"
+    echo "[$current_time] - INFO: Status: $service_status"
+    echo "[$current_time] - INFO: Deployment Status: $deployment_status"
+    echo "[$current_time] - INFO: Desired Tasks: $desired_tasks"
+    echo "[$current_time] - INFO: Pending Tasks: $pending_tasks"
+    echo "[$current_time] - INFO: Running Tasks: $running_tasks"
+    echo "[$current_time] - INFO: Rollout State Reason: $rollout_state_reason"
+
+    # Check the time elapsed
+    current_timestamp=$(date +%s)
+    elapsed_time=$((current_timestamp - start_time))
+
+    # Check if the service is successfully deployed, rolled back, or if it exceeds the timeout
+    if [ "$service_status" == "COMPLETED" ]; then
+        echo "[$current_time] - INFO: Deployment succeeded"
+        exit 0
+    elif [ "$service_status" == "FAILED" ]; then
+        echo "[$current_time] - ERROR: Deployment failed"
+        exit 1
+    elif [ "$service_status" == "ROLLED_BACK" ]; then
+        echo "[$current_time] - ERROR: The task was not deployed and rolled back to the previous task"
+        exit 1
+    elif [ "$elapsed_time" -gt "$timeout" ]; then
+        echo "[$current_time] - ERROR: Deployment in progress for more than 5 minutes"
+        exit 1
+    else
+        echo "[$current_time] - INFO: Waiting for deployment to complete. Current status: $service_status"
+    fi
+
+    # Wait for a few seconds before checking again
+    sleep 10
+done
