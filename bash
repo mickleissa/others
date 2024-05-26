@@ -15,28 +15,13 @@ echo "Module Name: $module_name"
 # Function to get the latest task definition ARN
 get_latest_task_def_arn() {
   echo "Retrieving the latest task definition ARN..."
-  latest_task_def_arn=$(aws ecs list-task-definitions \
+  aws ecs list-task-definitions \
     --family-prefix "$project_env-$module_name-task" \
     --sort DESC \
     --status ACTIVE \
     --max-items 1 \
     --query "taskDefinitionArns[0]" \
-    --output text)
-
-  # Check if the command was successful
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to retrieve the latest task definition ARN"
-    echo "AWS CLI Output: $latest_task_def_arn"
-    exit 1
-  fi
-
-  # Check if the latest_task_def_arn is empty
-  if [ -z "$latest_task_def_arn" ]; then
-    echo "Error: No active task definitions found for $project_env-$module_name-task"
-    exit 1
-  fi
-
-  echo "Latest task definition ARN retrieved: $latest_task_def_arn"
+    --output text
 }
 
 # Function to update the ECS service
@@ -52,15 +37,31 @@ update_service() {
 }
 
 # Retrieve the latest task definition ARN
-get_latest_task_def_arn
+latest_task_def_arn=$(get_latest_task_def_arn)
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to retrieve the latest task definition ARN"
+  echo "AWS CLI Output: $latest_task_def_arn"
+  exit 1
+fi
+
+# Check if the latest_task_def_arn is empty
+if [ -z "$latest_task_def_arn" ]; then
+  echo "Error: No active task definitions found for $project_env-$module_name-task"
+  exit 1
+fi
+
+echo "Latest task definition ARN retrieved: $latest_task_def_arn"
+
+# Extract the task definition family name and revision (remove "arn:aws:ecs:region:account-id:task-definition/")
+cleaned_task_def_arn=$(basename "$latest_task_def_arn")
 
 # Try to update the ECS service up to 2 times
 attempt=1
 max_attempts=2
 while [ $attempt -le $max_attempts ]; do
-  update_output=$(update_service "$latest_task_def_arn")
+  update_output=$(update_service "$cleaned_task_def_arn")
   if [ $? -eq 0 ]; then
-    echo "ECS service updated successfully to task definition $latest_task_def_arn on attempt $attempt"
+    echo "ECS service updated successfully to task definition $cleaned_task_def_arn on attempt $attempt"
     exit 0
   else
     echo "Error: Failed to update the ECS service on attempt $attempt"
