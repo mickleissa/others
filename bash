@@ -12,19 +12,35 @@ echo "Cluster ARN: $cluster_arn"
 echo "Project Environment: $project_env"
 echo "Module Name: $module_name"
 
-# Get the latest task definition ARN
-echo "Retrieving the latest task definition ARN..."
-latest_task_def_arn=$(aws ecs list-task-definitions \
-  --family-prefix $project_env-$module_name-task \
-  --sort DESC \
-  --status ACTIVE \
-  --max-items 1 \
-  --query "taskDefinitionArns[0]" \
-  --output text)
+# Function to get the latest task definition ARN
+get_latest_task_def_arn() {
+  echo "Retrieving the latest task definition ARN..."
+  aws ecs list-task-definitions \
+    --family-prefix "$project_env-$module_name-task" \
+    --sort DESC \
+    --status ACTIVE \
+    --max-items 1 \
+    --query "taskDefinitionArns[0]" \
+    --output text 2>&1
+}
 
-# Check if the list-task-definitions command was successful
+# Function to update the ECS service
+update_service() {
+  local latest_task_def_arn=$1
+  echo "Updating the ECS service with the latest task definition and forcing new deployment..."
+  aws ecs update-service \
+    --region "$region" \
+    --cluster "$cluster_arn" \
+    --service "$project_env-$module_name-service" \
+    --task-definition "$latest_task_def_arn" \
+    --force-new-deployment 2>&1
+}
+
+# Attempt to get the latest task definition ARN
+latest_task_def_arn=$(get_latest_task_def_arn)
 if [ $? -ne 0 ]; then
   echo "Error: Failed to retrieve the latest task definition ARN"
+  echo "AWS CLI Output: $latest_task_def_arn"
   exit 1
 fi
 
@@ -36,24 +52,11 @@ fi
 
 echo "Latest task definition ARN retrieved: $latest_task_def_arn"
 
-# Function to update the ECS service
-update_service() {
-  echo "Updating the ECS service with the latest task definition and forcing new deployment..."
-  update_output=$(aws ecs update-service \
-    --region $region \
-    --cluster $cluster_arn \
-    --service $project_env-$module_name-service \
-    --task-definition $latest_task_def_arn \
-    --force-new-deployment 2>&1)
-  
-  return $?
-}
-
 # Try to update the ECS service up to 2 times
 attempt=1
 max_attempts=2
 while [ $attempt -le $max_attempts ]; do
-  update_service
+  update_output=$(update_service "$latest_task_def_arn")
   if [ $? -eq 0 ]; then
     echo "ECS service updated successfully to task definition $latest_task_def_arn on attempt $attempt"
     exit 0
