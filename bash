@@ -36,20 +36,34 @@ fi
 
 echo "Latest task definition ARN retrieved: $latest_task_def_arn"
 
-# Update the ECS service with the latest task definition and force new deployment
-echo "Updating the ECS service with the latest task definition and forcing new deployment..."
-update_output=$(aws ecs update-service \
-  --region $region \
-  --cluster $cluster_arn \
-  --service $project_env-$module_name-service \
-  --task-definition $latest_task_def_arn \
-  --force-new-deployment)
+# Function to update the ECS service
+update_service() {
+  echo "Updating the ECS service with the latest task definition and forcing new deployment..."
+  update_output=$(aws ecs update-service \
+    --region $region \
+    --cluster $cluster_arn \
+    --service $project_env-$module_name-service \
+    --task-definition $latest_task_def_arn \
+    --force-new-deployment 2>&1)
+  
+  return $?
+}
 
-# Check if the update-service command was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to update the ECS service"
-  echo "AWS CLI Output: $update_output"
-  exit 1
-fi
+# Try to update the ECS service up to 2 times
+attempt=1
+max_attempts=2
+while [ $attempt -le $max_attempts ]; do
+  update_service
+  if [ $? -eq 0 ]; then
+    echo "ECS service updated successfully to task definition $latest_task_def_arn on attempt $attempt"
+    exit 0
+  else
+    echo "Error: Failed to update the ECS service on attempt $attempt"
+    echo "AWS CLI Output: $update_output"
+  fi
+  attempt=$((attempt + 1))
+done
 
-echo "ECS service updated successfully to task definition $latest_task_def_arn"
+# If we reach here, both attempts failed
+echo "Error: Failed to update the ECS service after $max_attempts attempts"
+exit 1
