@@ -10,43 +10,29 @@ task_def_arn="$5"
 # Function to print the dashboard header
 print_header() {
     clear
-    echo "------------------------------------------------------------"
-    echo "                 ECS Deployment Dashboard                   "
-    echo "------------------------------------------------------------"
-    echo "| Time                  | Deployment ID       | Status      |"
-    echo "------------------------------------------------------------"
-}
-
-# Function to print the dashboard footer
-print_footer() {
-    echo "------------------------------------------------------------"
+    echo "--------------------------------------------------------------------------------------------------"
+    echo "                                ECS Deployment Dashboard                                          "
+    echo "--------------------------------------------------------------------------------------------------"
+    echo "| Time                  | Service Name                     | Status       | Task ARN                                      |"
+    echo "--------------------------------------------------------------------------------------------------"
 }
 
 # Function to print a deployment status line
 print_status() {
     local time="$1"
-    local deployment_id="$2"
+    local service_name="$2"
     local status="$3"
-    local deployment_status="$4"
-    local desired_tasks="$5"
-    local pending_tasks="$6"
-    local running_tasks="$7"
-    local rollout_state_reason="$8"
+    local task_arn="$4"
 
-    printf "| %-21s | %-19s | %-10s |\n" "$time" "$deployment_id" "$status"
-    echo "  Deployment Status: $deployment_status"
-    echo "  Desired Tasks: $desired_tasks"
-    echo "  Pending Tasks: $pending_tasks"
-    echo "  Running Tasks: $running_tasks"
-    echo "  Rollout State Reason: $rollout_state_reason"
-    echo "------------------------------------------------------------"
+    printf "| %-21s | %-30s | %-12s | %-44s |\n" "$time" "$service_name" "$status" "$task_arn"
+    echo "--------------------------------------------------------------------------------------------------"
 }
 
 # Update the ECS service
 update_service_output=$(aws --region "$region" ecs update-service \
-    --cluster "${cluster_arn}/${project_env}-matterworx" \
+    --cluster "$cluster_arn" \
     --service "${project_env}-${module_name}-service" \
-    --task-definition "${task_def_arn}/${project_env}-${module_name}-task")
+    --task-definition "$task_def_arn")
 
 if [ $? -ne 0 ]; then
     echo "$(date +'%Y-%m-%d %H:%M:%S') - ERROR: Failed to update ECS service"
@@ -65,23 +51,29 @@ print_header
 while true; do
     # Get the current status of the service
     service_description=$(aws --region "$region" ecs describe-services \
-        --cluster "${cluster_arn}/${project_env}-matterworx" \
+        --cluster "$cluster_arn" \
         --services "${project_env}-${module_name}-service" \
         --query 'services[0]' \
         --output json)
 
-    # Extract deployment details using awk, grep, and sed
+    # Extract deployment details
     service_status=$(echo $service_description | grep -o '"rolloutState": *"[^"]*"' | awk -F '"' '{print $4}')
-    deployment_id=$(echo $service_description | grep -o '"id": *"[^"]*"' | awk -F '"' '{print $4}')
-    deployment_status=$(echo $service_description | grep -o '"status": *"[^"]*"' | awk -F '"' '{print $4}')
-    desired_tasks=$(echo $service_description | grep -o '"desiredCount": *[^,]*' | awk -F ': ' '{print $2}')
-    pending_tasks=$(echo $service_description | grep -o '"pendingCount": *[^,]*' | awk -F ': ' '{print $2}')
-    running_tasks=$(echo $service_description | grep -o '"runningCount": *[^,]*' | awk -F ': ' '{print $2}')
-    rollout_state_reason=$(echo $service_description | grep -o '"rolloutStateReason": *"[^"]*"' | awk -F '"' '{print $4}')
+    task_arns=$(echo $service_description | jq -r '.deployments[0].taskSets[0].taskSetArn' | awk '{print $1}')
     current_time=$(date +'%Y-%m-%d %H:%M:%S')
 
-    # Print the status
-    print_status "$current_time" "$deployment_id" "$service_status" "$deployment_status" "$desired_tasks" "$pending_tasks" "$running_tasks" "$rollout_state_reason"
+    # Retrieve logs from CloudWatch for each task
+    for task_arn in $task_arns; do
+        log_streams=$(aws logs describe-log-streams --log-group-name "/ecs/${project_env}-${module_name}-service" --query "logStreams[?logStreamName.contains(@, '${task_arn}')].logStreamName" --output text)
+
+        echo "[$current_time] - INFO: Logs for Task ARN: $task_arn"
+
+        for log_stream in $log_streams; do
+            aws logs get-log-events --log-group-name "/ecs/${project_env}-${module_name}-service" --log-stream-name "$log_stream" --limit 5 --query 'events[*].message' --output text
+        done
+
+        # Print the status
+        print_status "$current_time" "${project_env}-${module_name}-service" "$service_status" "$task_arn"
+    done
 
     # Check the time elapsed
     current_timestamp=$(date +%s)
