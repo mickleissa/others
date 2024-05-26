@@ -21,7 +21,7 @@ get_latest_task_def_arn() {
     --status ACTIVE \
     --max-items 1 \
     --query "taskDefinitionArns[0]" \
-    --output text 2>&1
+    --output text
 }
 
 # Function to update the ECS service
@@ -33,7 +33,7 @@ update_service() {
     --cluster "$cluster_arn" \
     --service "$project_env-$module_name-service" \
     --task-definition "$latest_task_def_arn" \
-    --force-new-deployment 2>&1
+    --force-new-deployment
 }
 
 # Attempt to get the latest task definition ARN
