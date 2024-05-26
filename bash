@@ -15,42 +15,44 @@ echo "Module Name: $module_name"
 # Function to get the latest task definition ARN
 get_latest_task_def_arn() {
   echo "Retrieving the latest task definition ARN..."
-  aws ecs list-task-definitions \
+  latest_task_def_arn=$(aws ecs list-task-definitions \
     --family-prefix "$project_env-$module_name-task" \
     --sort DESC \
     --status ACTIVE \
     --max-items 1 \
     --query "taskDefinitionArns[0]" \
-    --output text
+    --output text)
+
+  # Check if the command was successful
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to retrieve the latest task definition ARN"
+    echo "AWS CLI Output: $latest_task_def_arn"
+    exit 1
+  fi
+
+  # Check if the latest_task_def_arn is empty
+  if [ -z "$latest_task_def_arn" ]; then
+    echo "Error: No active task definitions found for $project_env-$module_name-task"
+    exit 1
+  fi
+
+  echo "Latest task definition ARN retrieved: $latest_task_def_arn"
 }
 
 # Function to update the ECS service
 update_service() {
-  local latest_task_def_arn=$1
+  local task_def_arn=$1
   echo "Updating the ECS service with the latest task definition and forcing new deployment..."
   aws ecs update-service \
     --region "$region" \
     --cluster "$cluster_arn" \
     --service "$project_env-$module_name-service" \
-    --task-definition "$latest_task_def_arn" \
+    --task-definition "$task_def_arn" \
     --force-new-deployment
 }
 
-# Attempt to get the latest task definition ARN
-latest_task_def_arn=$(get_latest_task_def_arn)
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to retrieve the latest task definition ARN"
-  echo "AWS CLI Output: $latest_task_def_arn"
-  exit 1
-fi
-
-# Check if the latest_task_def_arn is empty
-if [ -z "$latest_task_def_arn" ]; then
-  echo "Error: No active task definitions found for $project_env-$module_name-task"
-  exit 1
-fi
-
-echo "Latest task definition ARN retrieved: $latest_task_def_arn"
+# Retrieve the latest task definition ARN
+get_latest_task_def_arn
 
 # Try to update the ECS service up to 2 times
 attempt=1
