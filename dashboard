@@ -2,7 +2,7 @@
 
 # Define your variables
 region="$1"
-cluster_arn="$2"
+cluster_name="$2"
 project_env="$3"
 module_name="$4"
 task_def_arn="$5"
@@ -30,7 +30,7 @@ print_status() {
 
 # Update the ECS service
 update_service_output=$(aws --region "$region" ecs update-service \
-    --cluster "$cluster_arn" \
+    --cluster "$cluster_name" \
     --service "${project_env}-${module_name}-service" \
     --task-definition "$task_def_arn")
 
@@ -51,14 +51,14 @@ print_header
 while true; do
     # Get the current status of the service
     service_description=$(aws --region "$region" ecs describe-services \
-        --cluster "$cluster_arn" \
+        --cluster "$cluster_name" \
         --services "${project_env}-${module_name}-service" \
         --query 'services[0]' \
         --output json)
 
     # Extract deployment details
-    service_status=$(echo $service_description | grep -o '"rolloutState": *"[^"]*"' | awk -F '"' '{print $4}')
-    task_arns=$(echo $service_description | jq -r '.deployments[0].taskSets[0].taskSetArn' | awk '{print $1}')
+    service_status=$(echo $service_description | jq -r '.deployments[0].status')
+    task_arns=$(echo $service_description | jq -r '.deployments[0].taskSets[0].taskSetArn')
     current_time=$(date +'%Y-%m-%d %H:%M:%S')
 
     # Retrieve logs from CloudWatch for each task
@@ -80,7 +80,7 @@ while true; do
     elapsed_time=$((current_timestamp - start_time))
 
     # Check if the service is successfully deployed, rolled back, or if it exceeds the timeout
-    if [ "$service_status" == "COMPLETED" ]; then
+    if [ "$service_status" == "PRIMARY" ]; then
         echo "[$current_time] - INFO: Deployment succeeded"
         exit 0
     elif [ "$service_status" == "FAILED" ]; then
