@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# Set your variables (hardcoded for now, replace with actual values)
+region="us-west-2"
+cluster_arn="arn:aws:ecs:us-west-2:123456789012:cluster/dev-matterworx"
+project_env="dev"
+module_name="app"
+
+echo "Starting ECS service update process..."
+echo "Region: $region"
+echo "Cluster ARN: $cluster_arn"
+echo "Project Environment: $project_env"
+echo "Module Name: $module_name"
+
+# Function to get the latest task definition ARN
+get_latest_task_def_arn() {
+  echo "Retrieving the latest task definition ARN..."
+  aws ecs list-task-definitions \
+    --family-prefix "$project_env-$module_name-task" \
+    --sort DESC \
+    --status ACTIVE \
+    --max-items 1 \
+    --query "taskDefinitionArns[0]" \
+    --output text
+}
+
+# Function to update the ECS service
+update_service() {
+  local task_def_arn=$1
+  echo "Updating the ECS service with the latest task definition and forcing new deployment..."
+  aws ecs update-service \
+    --region "$region" \
+    --cluster "$cluster_arn/$project_env-matterworx" \
+    --service "$project_env-$module_name-service" \
+    --task-definition "$task_def_arn" \
+    --force-new-deployment
+}
+
+# Function to check the deployment status
+check_deployment_status() {
+  local service_name="$project_env-$module_name-service"
+  local cluster_name="$cluster_arn/$project_env-matterworx"
+
+  while true; do
+    deployment_status=$(aws ecs describe-services \
+      --region "$region" \
+      --cluster "$cluster_name" \
+      --services "$service_name" \
+      --query 'services[0].deployments[?status==`PRIMARY`].rolloutState' \
+      --output text)
+
+    if [ "$deployment_status" == "COMPLETED" ]; then
+      echo "Deployment completed successfully."
+      return 0
+    elif [ "$deployment_status" == "FAILED" ]; then
+      echo "Deployment failed and rolled back."
+      return 1
+    fi
+
+    echo "Waiting for deployment to complete..."
+    sleep 10
+  done
+}
+
+# Retrieve the latest task definition ARN
+latest_task_def_arn=$(get_latest_task_def_arn)
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to retrieve the latest task definition ARN"
+  echo "AWS CLI Output: $latest_task_def_arn"
+  exit 1
+fi
+
+# Check if the latest_task_def_arn is empty
+if [ -z "$latest_task_def_arn" ]; then
+  echo "Error: No active task definitions found for $project_env-$module_name-task"
+  exit 1
+fi
+
+echo "Latest task definition ARN retrieved: $latest_task_def_arn"
+
+# Update the ECS service
+update_output=$(update_service "$latest_task_def_arn")
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to update the ECS service"
+  echo "AWS CLI Output: $update_output"
+  exit 1
+fi
+
+# Check the deployment status
+check_deployment_status
+if [ $? -ne 0 ]; then
+  echo "Error: Deployment failed and rolled back."
+  exit 1
+fi
+
+echo "ECS service updated successfully."
+exit 0
