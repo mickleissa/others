@@ -18,6 +18,33 @@ if [[ $? -ne 0 ]]; then
   exit 1
 fi
 
+# Function to check the status of the deployment
+check_deployment_status() {
+  deployment_status=$(aws ecs describe-services --region "$region" --cluster "${cluster_arn}/${project_env}-matterworx" --services "${project_env}-${module_name}-service" --query 'services[0].deployments[0].status' --output text)
+
+  if [[ "$deployment_status" == "PRIMARY" ]]; then
+    echo "Deployment completed."
+    return 0
+  else
+    echo "Deployment status is: $deployment_status"
+    return 1
+  fi
+}
+
+# Wait for the deployment to complete
+while true; do
+  check_deployment_status
+  deployment_status=$?
+
+  if [[ $deployment_status -eq 0 ]]; then
+    echo "Deployment completed successfully."
+    break
+  fi
+
+  echo "Waiting for deployment to complete..."
+  sleep 10
+done
+
 # Function to check the status of the last deployed task
 check_task_status() {
   task_arn=$(aws ecs list-tasks --region "$region" --cluster "${cluster_arn}/${project_env}-matterworx" --service-name "${project_env}-${module_name}-service" --desired-status RUNNING --query 'taskArns[0]' --output text)
