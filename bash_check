@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Check if the required environment variables are set
+if [[ -z "$region" || -z "$cluster_arn" || -z "$project_env" || -z "$module_name" || -z "$task_def_arn" ]]; then
+  echo "One or more required environment variables are missing."
+  exit 1
+fi
+
+# Update ECS service
+aws ecs update-service \
+  --region "$region" \
+  --cluster "${cluster_arn}/${project_env}-matterworx" \
+  --service "${project_env}-${module_name}-service" \
+  --task-definition "${task_def_arn}/${project_env}-${module_name}-task"
+
+if [[ $? -ne 0 ]]; then
+  echo "Failed to update ECS service."
+  exit 1
+fi
+
+# Function to check the status of the last deployed task
+check_task_status() {
+  task_arn=$(aws ecs list-tasks --region "$region" --cluster "${cluster_arn}/${project_env}-matterworx" --service-name "${project_env}-${module_name}-service" --desired-status RUNNING --query 'taskArns[0]' --output text)
+
+  if [[ -z "$task_arn" ]]; then
+    echo "No running task found."
+    return 1
+  fi
+
+  last_status=$(aws ecs describe-tasks --region "$region" --cluster "${cluster_arn}/${project_env}-matterworx" --tasks "$task_arn" --query 'tasks[0].lastStatus' --output text)
+
+  if [[ "$last_status" == "RUNNING" ]]; then
+    echo "Task is running."
+    return 0
+  elif [[ "$last_status" == "STOPPED" ]]; then
+    echo "Task failed."
+    return 1
+  else
+    echo "Task status is: $last_status"
+    return 2
+  fi
+}
+
+# Wait for the task to be deployed
+while true; do
+  check_task_status
+  status=$?
+
+  if [[ $status -eq 0 ]]; then
+    echo "Task deployed successfully."
+    exit 0
+  elif [[ $status -eq 1 ]]; then
+    echo "Task failed to deploy."
+    exit 1
+  fi
+
+  echo "Waiting for task to be deployed..."
+  sleep 10
+done
