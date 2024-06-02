@@ -1,0 +1,98 @@
+
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform : Init'
+            inputs:
+              provider: 'aws'
+              command: 'validate'
+# Second Stage Terraform Plan 
+  - stage: Terraform_Plan
+
+    condition: succeeded('Terraform_Install') # It will run if the stage first
+    dependsOn: Terraform_Install # to not run parrlel
+    jobs:
+      - job: Plan
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Terraform : install'
+            inputs:
+              terraformVersion: 'latest'
+        # Terraform init task
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform : Init'
+            inputs:
+              provider: 'aws'
+              command: 'init'
+              commandOptions: '--reconfigure'
+              backendServiceAWS: 'Terraform'
+              backendAWSBucketName: 'terraform-dev-proj-1-jenkins-remote-state-bucket-2024'
+              backendAWSKey: 'devops-project-1/jenkins'
+        # Terraform Plan task
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform : Plan'
+            inputs:
+              provider: 'aws'
+              command: 'plan'
+              commandOptions: '-out dev-plan'
+              environmentServiceNameAWS: 'Terraform'
+              
+  # Third Stage Terraform Apply 
+  - stage: Terraform_Apply
+    condition: succeeded('Terraform_Plan') # It will run if the stage first
+    dependsOn: Terraform_Plan # to not run parrlel
+    jobs:
+    - job: Apply
+      steps:
+        - task: TerraformInstaller@1
+          displayName: 'Terraform : install'
+          inputs:
+            terraformVersion: 'latest'
+      # Terraform init task
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform : Init'
+          inputs:
+            provider: 'aws'
+            command: 'init'
+            commandOptions: '--reconfigure'
+            backendServiceAWS: 'Terraform'
+            backendAWSBucketName: 'terraform-dev-proj-1-jenkins-remote-state-bucket-2024'
+            backendAWSKey: 'devops-project-1/jenkins'
+      # Terraform Apply task
+        - task: TerraformTaskV4@4
+          displayName: 'Terraform : Plan'
+          inputs:
+            provider: 'aws'
+            command: 'apply'
+            # commandOptions: '-out dev-plan'
+            environmentServiceNameAWS: 'Terraform'
+
+  - stage: Terraform_Destroy
+    condition: succeeded('Terraform_Apply') # It will run if the stage first
+    dependsOn: Terraform_Apply # to not run parrlel
+    jobs:
+    - job: Destroy
+      # environment: 'Approvals'
+      # strategy:
+      #   runOnce:
+      #     deploy:
+      steps:
+      - task: TerraformInstaller@1
+        displayName: 'Terraform : install'
+        inputs:
+          terraformVersion: 'latest'
+    # Terraform init task
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform : Init'
+        inputs:
+          provider: 'aws'
+          command: 'init'
+          commandOptions: '--reconfigure'
+          backendServiceAWS: 'Terraform'
+          backendAWSBucketName: 'terraform-dev-proj-1-jenkins-remote-state-bucket-2024'
+          backendAWSKey: 'devops-project-1/jenkins'
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform : Destroy'
+        inputs:
+          provider: 'aws'
+          command: 'destroy'
+          # commandOptions: '-out dev-plan'
+          environmentServiceNameAWS: 'Terraform'
