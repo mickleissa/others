@@ -1,1 +1,41 @@
 aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text
+
+
+aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text | xargs -I {} aws logs get-log-events --log-group-name /ecs/dev-assignment --log-stream-name {} --limit 1 --query 'events[-1].message' --output text
+
+Explanation:
+
+    Describe Log Streams:
+
+    sh
+
+aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text
+
+This part retrieves the name of the most recent log stream in the specified log group.
+
+Pipe to xargs:
+
+sh
+
+| xargs -I {}
+
+The xargs command takes the output of the previous command (the log stream name) and passes it as an argument to the next command.
+
+Get Log Events:
+
+sh
+
+    aws logs get-log-events --log-group-name /ecs/dev-assignment --log-stream-name {} --limit 1 --query 'events[-1].message' --output text
+
+    This part fetches the most recent log event from the log stream provided by xargs.
+
+Full Command:
+
+Here is the full command in one line:
+
+sh
+
+aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text | xargs -I {} aws logs get-log-events --log-group-name /ecs/dev-assignment --log-stream-name {} --limit 1 --query 'events[-1].message' --output text
+
+This command sequence will output the latest log message from the most recent log stream in the /ecs/dev-assignment log group.
+
