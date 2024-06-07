@@ -1,0 +1,1 @@
+aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text
