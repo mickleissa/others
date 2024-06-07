@@ -39,3 +39,6 @@ aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by La
 
 This command sequence will output the latest log message from the most recent log stream in the /ecs/dev-assignment log group.
 
+
+aws logs describe-log-streams --log-group-name /ecs/dev-assignment --order-by LastEventTime --descending --limit 1 --query 'logStreams[0].logStreamName' --output text | xargs -I {} aws logs get-log-events --log-group-name /ecs/dev-assignment --log-stream-name {} --limit 50 --query 'events[].[timestamp, message]' --output text
+
