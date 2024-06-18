@@ -1,0 +1,981 @@
+Add to this module aws_eip and aws_nat_gateway
+Setup VPC
+
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+cidr_block = var.vpc_cidr
+tags = {
+Name = var.vpc_name
+}
+}
+Setup public subnet
+
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+count = length(var.cidr_public_subnet)
+vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+cidr_block = element(var.cidr_public_subnet, count.index)
+availability_zone = element(var.us_availability_zone, count.index)
+
+tags = {
+Name = "dev-proj-public-subnet-${count.index + 1}"
+}
+}
+Setup private subnet
+
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+count = length(var.cidr_private_subnet)
+vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+cidr_block = element(var.cidr_private_subnet, count.index)
+availability_zone = element(var.us_availability_zone, count.index)
+
+tags = {
+Name = "dev-proj-private-subnet-${count.index + 1}"
+}
+}
+Setup Internet Gateway
+
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+tags = {
+Name = "dev-proj-1-igw"
+}
+}
+Public Route Table
+
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+route {
+cidr_block = "0.0.0.0/0"
+gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+}
+tags = {
+Name = "dev-proj-1-public-rt"
+}
+}
+Public Route Table and Public Subnet Association
+
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+count = length(aws_subnet.dev_proj_1_public_subnets)
+subnet_id = aws_subnet.dev_proj_1_public_subnets[count.index].id
+route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+Private Route Table
+
+resource "aws_route_table" "dev_proj_1_private_subnets" {
+vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+#depends_on = [aws_nat_gateway.nat_gateway]
+tags = {
+Name = "dev-proj-1-private-rt"
+}
+}
+Private Route Table and private Subnet Association
+
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+count = length(aws_subnet.dev_proj_1_private_subnets)
+subnet_id = aws_subnet.dev_proj_1_private_subnets[count.index].id
+route_table_id = aws_route_table.dev_proj_1_private_subnets.id
+}
+ChatGPT
+
+To add Elastic IP (EIP) and NAT Gateway resources to your existing Terraform configuration, you will need to follow these steps:
+
+    Define the EIP resource.
+    Define the NAT Gateway resource using the allocated EIP.
+    Update the private route table to use the NAT Gateway for outbound internet access.
+
+Here is the updated module with the aws_eip and aws_nat_gateway resources included:
+
+hcl
+
+# Setup VPC
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+  cidr_block = var.vpc_cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+# Setup public subnet
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+  count             = length(var.cidr_public_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_public_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-public-subnet-${count.index + 1}"
+  }
+}
+
+# Setup private subnet
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+  count             = length(var.cidr_private_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_private_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-private-subnet-${count.index + 1}"
+  }
+}
+
+# Setup Internet Gateway
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  tags = {
+    Name = "dev-proj-1-igw"
+  }
+}
+
+# Public Route Table
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-public-rt"
+  }
+}
+
+# Public Route Table and Public Subnet Association
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_public_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+
+# Setup Elastic IP for NAT Gateway
+resource "aws_eip" "dev_proj_1_nat_eip" {
+  vpc = true
+
+  tags = {
+    Name = "dev-proj-1-nat-eip"
+  }
+}
+
+# Setup NAT Gateway
+resource "aws_nat_gateway" "dev_proj_1_nat_gateway" {
+  allocation_id = aws_eip.dev_proj_1_nat_eip.id
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[0].id
+
+  tags = {
+    Name = "dev-proj-1-nat-gateway"
+  }
+}
+
+# Private Route Table
+resource "aws_route_table" "dev_proj_1_private_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.dev_proj_1_nat_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-private-rt"
+  }
+}
+
+# Private Route Table and Private Subnet Association
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_private_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_private_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_private_route_table.id
+}
+
+Notes:
+
+    The aws_eip resource is used to allocate an Elastic IP address for the NAT Gateway.
+    The aws_nat_gateway resource is used to create the NAT Gateway in one of the public subnets.
+    The private route table (aws_route_table for private subnets) is updated to route traffic to the internet via the NAT Gateway. This allows instances in the private subnets to access the internet without exposing them directly.
+
+By adding these resources, you ensure that your private subnets can route outbound traffic through the NAT Gateway, while the public subnets route directly through the Internet Gateway.
+
+add aws_network_interface add attach it with same subnet
+ChatGPT
+
+To add a network interface and attach it to a subnet, you can use the aws_network_interface resource. Here is the updated Terraform configuration with the aws_network_interface resource and its attachment to the same subnet:
+
+hcl
+
+# Setup VPC
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+  cidr_block = var.vpc_cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+# Setup public subnet
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+  count             = length(var.cidr_public_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_public_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-public-subnet-${count.index + 1}"
+  }
+}
+
+# Setup private subnet
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+  count             = length(var.cidr_private_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_private_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-private-subnet-${count.index + 1}"
+  }
+}
+
+# Setup Internet Gateway
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  tags = {
+    Name = "dev-proj-1-igw"
+  }
+}
+
+# Public Route Table
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-public-rt"
+  }
+}
+
+# Public Route Table and Public Subnet Association
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_public_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+
+# Setup Elastic IP for NAT Gateway
+resource "aws_eip" "dev_proj_1_nat_eip" {
+  vpc = true
+
+  tags = {
+    Name = "dev-proj-1-nat-eip"
+  }
+}
+
+# Setup NAT Gateway
+resource "aws_nat_gateway" "dev_proj_1_nat_gateway" {
+  allocation_id = aws_eip.dev_proj_1_nat_eip.id
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[0].id
+
+  tags = {
+    Name = "dev-proj-1-nat-gateway"
+  }
+}
+
+# Private Route Table
+resource "aws_route_table" "dev_proj_1_private_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.dev_proj_1_nat_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-private-rt"
+  }
+}
+
+# Private Route Table and Private Subnet Association
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_private_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_private_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_private_route_table.id
+}
+
+# Setup Network Interface
+resource "aws_network_interface" "dev_proj_1_network_interface" {
+  count       = length(var.cidr_public_subnet)
+  subnet_id   = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  description = "Network interface for dev-proj-${count.index + 1}"
+
+  tags = {
+    Name = "dev-proj-${count.index + 1}-ni"
+  }
+}
+
+# Attach Network Interface to an instance (example)
+resource "aws_instance" "dev_proj_1_instance" {
+  count = length(var.cidr_public_subnet)
+  ami           = var.instance_ami
+  instance_type = var.instance_type
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[count.index].id
+
+  network_interface {
+    network_interface_id = aws_network_interface.dev_proj_1_network_interface[count.index].id
+    device_index         = 1
+  }
+
+  tags = {
+    Name = "dev-proj-instance-${count.index + 1}"
+  }
+}
+
+Notes:
+
+    The aws_network_interface resource creates a network interface in each public subnet.
+    The aws_instance resource is provided as an example of how to attach the network interface to an instance. You can modify it according to your specific needs (such as attaching to different instances or resources).
+    The network_interface block within the aws_instance resource attaches the network interface to the instance.
+
+Make sure you have variables instance_ami and instance_type defined in your variables.tf file or passed as input variables. This setup ensures that each public subnet has a corresponding network interface and that these interfaces can be attached to instances or other resources as needed.
+
+fix the terraform script to create multi target group.
+resource "aws_lb_target_group" "dev_proj_1_lb_target_group" {
+name = var.lb_target_group_name
+port = var.lb_target_group_port
+protocol = var.lb_target_group_protocol
+vpc_id = var.vpc_id
+health_check {
+path = "/login"
+port = 8080
+healthy_threshold = 6
+unhealthy_threshold = 2
+timeout = 2
+interval = 5
+matcher = "200" # has to be HTTP 200 or fails
+}
+}
+
+resource "aws_lb_target_group_attachment" "dev_proj_1_lb_target_group_attachment" {
+target_group_arn = aws_lb_target_group.dev_proj_1_lb_target_group.arn
+target_id = var.ec2_instance_id
+port = 8080
+}
+ChatGPT
+
+To create multiple target groups and their respective attachments, you can use the count or for_each meta-argument in Terraform. Below is an updated version of your Terraform script using for_each to create multiple target groups and their attachments. This approach is more flexible and easier to manage when dealing with multiple target groups.
+
+First, ensure you have the necessary input variables in your variables.tf file, such as lb_target_groups, which is a list of objects containing the necessary details for each target group, and ec2_instance_ids, which is a list of EC2 instance IDs to attach to the target groups.
+variables.tf
+
+hcl
+
+variable "lb_target_groups" {
+  description = "List of target groups configurations"
+  type = list(object({
+    name     = string
+    port     = number
+    protocol = string
+    path     = string
+    vpc_id   = string
+  }))
+}
+
+variable "ec2_instance_ids" {
+  description = "List of EC2 instance IDs to attach to the target groups"
+  type = list(string)
+}
+
+main.tf
+
+hcl
+
+# Setup VPC
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+  cidr_block = var.vpc_cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+# Setup public subnet
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+  count             = length(var.cidr_public_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_public_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-public-subnet-${count.index + 1}"
+  }
+}
+
+# Setup private subnet
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+  count             = length(var.cidr_private_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_private_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-private-subnet-${count.index + 1}"
+  }
+}
+
+# Setup Internet Gateway
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  tags = {
+    Name = "dev-proj-1-igw"
+  }
+}
+
+# Public Route Table
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-public-rt"
+  }
+}
+
+# Public Route Table and Public Subnet Association
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_public_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+
+# Setup Elastic IP for NAT Gateway
+resource "aws_eip" "dev_proj_1_nat_eip" {
+  vpc = true
+
+  tags = {
+    Name = "dev-proj-1-nat-eip"
+  }
+}
+
+# Setup NAT Gateway
+resource "aws_nat_gateway" "dev_proj_1_nat_gateway" {
+  allocation_id = aws_eip.dev_proj_1_nat_eip.id
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[0].id
+
+  tags = {
+    Name = "dev-proj-1-nat-gateway"
+  }
+}
+
+# Private Route Table
+resource "aws_route_table" "dev_proj_1_private_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.dev_proj_1_nat_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-private-rt"
+  }
+}
+
+# Private Route Table and Private Subnet Association
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_private_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_private_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_private_route_table.id
+}
+
+# Setup Network Interface
+resource "aws_network_interface" "dev_proj_1_network_interface" {
+  count       = length(var.cidr_public_subnet)
+  subnet_id   = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  description = "Network interface for dev-proj-${count.index + 1}"
+
+  tags = {
+    Name = "dev-proj-${count.index + 1}-ni"
+  }
+}
+
+# Attach Network Interface to an instance (example)
+resource "aws_instance" "dev_proj_1_instance" {
+  count = length(var.cidr_public_subnet)
+  ami           = var.instance_ami
+  instance_type = var.instance_type
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[count.index].id
+
+  network_interface {
+    network_interface_id = aws_network_interface.dev_proj_1_network_interface[count.index].id
+    device_index         = 1
+  }
+
+  tags = {
+    Name = "dev-proj-instance-${count.index + 1}"
+  }
+}
+
+# Create multiple target groups
+resource "aws_lb_target_group" "dev_proj_1_lb_target_group" {
+  for_each = { for idx, tg in var.lb_target_groups : idx => tg }
+  name     = each.value.name
+  port     = each.value.port
+  protocol = each.value.protocol
+  vpc_id   = each.value.vpc_id
+
+  health_check {
+    path                 = each.value.path
+    port                 = each.value.port
+    healthy_threshold    = 6
+    unhealthy_threshold  = 2
+    timeout              = 2
+    interval             = 5
+    matcher              = "200"  # has to be HTTP 200 or fails
+  }
+}
+
+# Attach multiple EC2 instances to each target group
+resource "aws_lb_target_group_attachment" "dev_proj_1_lb_target_group_attachment" {
+  for_each = { for idx, instance_id in var.ec2_instance_ids : idx => instance_id }
+  target_group_arn = aws_lb_target_group.dev_proj_1_lb_target_group[each.key].arn
+  target_id        = each.value
+  port             = 8080
+}
+
+Notes:
+
+    The for_each meta-argument is used to create multiple target groups and their attachments based on the lb_target_groups and ec2_instance_ids variables.
+    The lb_target_groups variable should be a list of objects containing the details for each target group (name, port, protocol, path, and vpc_id).
+    The ec2_instance_ids variable should be a list of EC2 instance IDs to attach to the target groups.
+    This configuration dynamically creates target groups and their attachments based on the input variables, making it easier to manage and extend.
+
+Make sure to update your variables.tf and main.tf files according to your specific needs and ensure all necessary variables are defined and passed correctly.
+
+the target group for ips
+ChatGPT
+
+To create multiple target groups for IP targets and their respective attachments, you can adjust your Terraform script. Below is an updated version of your Terraform configuration using for_each to create multiple target groups for IP addresses and their attachments.
+variables.tf
+
+hcl
+
+variable "lb_target_groups" {
+  description = "List of target groups configurations"
+  type = list(object({
+    name     = string
+    port     = number
+    protocol = string
+    path     = string
+    vpc_id   = string
+  }))
+}
+
+variable "target_ips" {
+  description = "List of IP addresses to attach to the target groups"
+  type = list(string)
+}
+
+main.tf
+
+hcl
+
+# Setup VPC
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+  cidr_block = var.vpc_cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+# Setup public subnet
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+  count             = length(var.cidr_public_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_public_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-public-subnet-${count.index + 1}"
+  }
+}
+
+# Setup private subnet
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+  count             = length(var.cidr_private_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_private_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-private-subnet-${count.index + 1}"
+  }
+}
+
+# Setup Internet Gateway
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  tags = {
+    Name = "dev-proj-1-igw"
+  }
+}
+
+# Public Route Table
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-public-rt"
+  }
+}
+
+# Public Route Table and Public Subnet Association
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_public_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+
+# Setup Elastic IP for NAT Gateway
+resource "aws_eip" "dev_proj_1_nat_eip" {
+  vpc = true
+
+  tags = {
+    Name = "dev-proj-1-nat-eip"
+  }
+}
+
+# Setup NAT Gateway
+resource "aws_nat_gateway" "dev_proj_1_nat_gateway" {
+  allocation_id = aws_eip.dev_proj_1_nat_eip.id
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[0].id
+
+  tags = {
+    Name = "dev-proj-1-nat-gateway"
+  }
+}
+
+# Private Route Table
+resource "aws_route_table" "dev_proj_1_private_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.dev_proj_1_nat_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-private-rt"
+  }
+}
+
+# Private Route Table and Private Subnet Association
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_private_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_private_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_private_route_table.id
+}
+
+# Setup Network Interface
+resource "aws_network_interface" "dev_proj_1_network_interface" {
+  count       = length(var.cidr_public_subnet)
+  subnet_id   = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  description = "Network interface for dev-proj-${count.index + 1}"
+
+  tags = {
+    Name = "dev-proj-${count.index + 1}-ni"
+  }
+}
+
+# Attach Network Interface to an instance (example)
+resource "aws_instance" "dev_proj_1_instance" {
+  count = length(var.cidr_public_subnet)
+  ami           = var.instance_ami
+  instance_type = var.instance_type
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[count.index].id
+
+  network_interface {
+    network_interface_id = aws_network_interface.dev_proj_1_network_interface[count.index].id
+    device_index         = 1
+  }
+
+  tags = {
+    Name = "dev-proj-instance-${count.index + 1}"
+  }
+}
+
+# Create multiple target groups
+resource "aws_lb_target_group" "dev_proj_1_lb_target_group" {
+  for_each = { for idx, tg in var.lb_target_groups : idx => tg }
+  name     = each.value.name
+  port     = each.value.port
+  protocol = each.value.protocol
+  vpc_id   = each.value.vpc_id
+
+  target_type = "ip"  # Specify that the target type is IP
+
+  health_check {
+    path                 = each.value.path
+    port                 = each.value.port
+    healthy_threshold    = 6
+    unhealthy_threshold  = 2
+    timeout              = 2
+    interval             = 5
+    matcher              = "200"  # has to be HTTP 200 or fails
+  }
+}
+
+# Attach multiple IP addresses to each target group
+resource "aws_lb_target_group_attachment" "dev_proj_1_lb_target_group_attachment" {
+  for_each = { for idx, ip in var.target_ips : idx => ip }
+  target_group_arn = aws_lb_target_group.dev_proj_1_lb_target_group[each.key].arn
+  target_id        = each.value
+  port             = 8080
+}
+
+Notes:
+
+    The aws_lb_target_group resource is configured to create multiple target groups for IP addresses. The target_type attribute is set to "ip".
+    The aws_lb_target_group_attachment resource attaches each IP address specified in var.target_ips to the corresponding target group.
+    Ensure that lb_target_groups is a list of objects containing the details for each target group (name, port, protocol, path, and vpc_id).
+    Ensure that target_ips is a list of IP addresses to be attached to the target groups.
+
+This configuration dynamically creates target groups for IP targets and their attachments based on the input variables, making it easier to manage and extend. Adjust the variables and values according to your specific requirements.
+
+connect it with main.tf and add demo value for 6 target group
+ChatGPT
+
+To connect the updated target group configuration with your main Terraform configuration and provide demo values for six target groups, you'll need to make sure that your variables are defined and used correctly. Here’s how you can structure your variables.tf and main.tf files:
+variables.tf
+
+hcl
+
+variable "vpc_cidr" {
+  description = "The CIDR block for the VPC."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "vpc_name" {
+  description = "The name of the VPC."
+  type        = string
+  default     = "dev-proj-vpc"
+}
+
+variable "cidr_public_subnet" {
+  description = "List of CIDR blocks for the public subnets."
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+}
+
+variable "cidr_private_subnet" {
+  description = "List of CIDR blocks for the private subnets."
+  type        = list(string)
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
+}
+
+variable "us_availability_zone" {
+  description = "List of availability zones."
+  type        = list(string)
+  default     = ["us-east-1a", "us-east-1b"]
+}
+
+variable "instance_ami" {
+  description = "The AMI ID for the instances."
+  type        = string
+  default     = "ami-0c55b159cbfafe1f0"  # Example AMI ID
+}
+
+variable "instance_type" {
+  description = "The instance type."
+  type        = string
+  default     = "t2.micro"
+}
+
+variable "lb_target_groups" {
+  description = "List of target groups configurations."
+  type = list(object({
+    name     = string
+    port     = number
+    protocol = string
+    path     = string
+    vpc_id   = string
+  }))
+  default = [
+    { name = "tg1", port = 80, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" },
+    { name = "tg2", port = 81, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" },
+    { name = "tg3", port = 82, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" },
+    { name = "tg4", port = 83, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" },
+    { name = "tg5", port = 84, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" },
+    { name = "tg6", port = 85, protocol = "HTTP", path = "/login", vpc_id = "vpc-xxxxxxxx" }
+  ]
+}
+
+variable "target_ips" {
+  description = "List of IP addresses to attach to the target groups."
+  type        = list(string)
+  default     = ["10.0.1.10", "10.0.1.11", "10.0.1.12", "10.0.1.13", "10.0.1.14", "10.0.1.15"]
+}
+
+main.tf
+
+hcl
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+# Setup VPC
+resource "aws_vpc" "dev_proj_1_vpc_us_east_1" {
+  cidr_block = var.vpc_cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+# Setup public subnet
+resource "aws_subnet" "dev_proj_1_public_subnets" {
+  count             = length(var.cidr_public_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_public_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-public-subnet-${count.index + 1}"
+  }
+}
+
+# Setup private subnet
+resource "aws_subnet" "dev_proj_1_private_subnets" {
+  count             = length(var.cidr_private_subnet)
+  vpc_id            = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  cidr_block        = element(var.cidr_private_subnet, count.index)
+  availability_zone = element(var.us_availability_zone, count.index)
+
+  tags = {
+    Name = "dev-proj-private-subnet-${count.index + 1}"
+  }
+}
+
+# Setup Internet Gateway
+resource "aws_internet_gateway" "dev_proj_1_public_internet_gateway" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  tags = {
+    Name = "dev-proj-1-igw"
+  }
+}
+
+# Public Route Table
+resource "aws_route_table" "dev_proj_1_public_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.dev_proj_1_public_internet_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-public-rt"
+  }
+}
+
+# Public Route Table and Public Subnet Association
+resource "aws_route_table_association" "dev_proj_1_public_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_public_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_public_route_table.id
+}
+
+# Setup Elastic IP for NAT Gateway
+resource "aws_eip" "dev_proj_1_nat_eip" {
+  vpc = true
+
+  tags = {
+    Name = "dev-proj-1-nat-eip"
+  }
+}
+
+# Setup NAT Gateway
+resource "aws_nat_gateway" "dev_proj_1_nat_gateway" {
+  allocation_id = aws_eip.dev_proj_1_nat_eip.id
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[0].id
+
+  tags = {
+    Name = "dev-proj-1-nat-gateway"
+  }
+}
+
+# Private Route Table
+resource "aws_route_table" "dev_proj_1_private_route_table" {
+  vpc_id = aws_vpc.dev_proj_1_vpc_us_east_1.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.dev_proj_1_nat_gateway.id
+  }
+  tags = {
+    Name = "dev-proj-1-private-rt"
+  }
+}
+
+# Private Route Table and Private Subnet Association
+resource "aws_route_table_association" "dev_proj_1_private_rt_subnet_association" {
+  count          = length(aws_subnet.dev_proj_1_private_subnets)
+  subnet_id      = aws_subnet.dev_proj_1_private_subnets[count.index].id
+  route_table_id = aws_route_table.dev_proj_1_private_route_table.id
+}
+
+# Setup Network Interface
+resource "aws_network_interface" "dev_proj_1_network_interface" {
+  count       = length(var.cidr_public_subnet)
+  subnet_id   = aws_subnet.dev_proj_1_public_subnets[count.index].id
+  description = "Network interface for dev-proj-${count.index + 1}"
+
+  tags = {
+    Name = "dev-proj-${count.index + 1}-ni"
+  }
+}
+
+# Attach Network Interface to an instance (example)
+resource "aws_instance" "dev_proj_1_instance" {
+  count = length(var.cidr_public_subnet)
+  ami           = var.instance_ami
+  instance_type = var.instance_type
+  subnet_id     = aws_subnet.dev_proj_1_public_subnets[count.index].id
+
+  network_interface {
+    network_interface_id = aws_network_interface.dev_proj_1_network_interface[count.index].id
+    device_index         = 1
+  }
+
+  tags = {
+    Name = "dev-proj-instance-${count.index + 1}"
+  }
+}
+
+# Create multiple target groups
+resource "aws_lb_target_group" "dev_proj_1_lb_target_group" {
+  for_each = { for idx, tg in var.lb_target_groups : idx => tg }
+  name     = each.value.name
+  port     = each.value.port
+  protocol = each.value.protocol
+  vpc_id   = each.value.vpc_id
+
+  target_type = "ip"  # Specify that the target type is IP
+
+  health_check {
+    path                 = each.value.path
+    port                 = each.value.port
+    healthy_threshold    = 6
+    unhealthy_threshold  = 2
+    timeout              = 2
+    interval             = 5
+    matcher              = "200"  # has to be HTTP 200 or fails
+  }
+}
+
+# Attach multiple IP addresses to each target group
+resource "aws_lb_target_group_attachment" "dev_proj_1_lb_target_group_attachment" {
+  for_each = { for idx, ip in var.target_ips : idx => ip }
+  target_group_arn = aws_lb_target_group.dev_proj_1_lb_target_group[each.key].arn
+  target_id        = each.value
+  port             = 8080
+}
+
+Notes:
+
+    Make sure to replace "vpc-xxxxxxxx" with the actual VPC ID.
+    Ensure that the IP addresses and other details in target_ips and lb_target_groups are configured according to your environment.
+    Adjust the AMI ID in the instance_ami variable as per your requirement.
+    This script sets up a VPC, subnets, an internet gateway, a NAT gateway, and target groups with IP targets. The instances and network interfaces are just examples and can be adjusted as needed.
+
+ChatGPT can make mistakes. Check important info.
