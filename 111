@@ -1,0 +1,5 @@
+
+locals {
+  default_target_ips = [for i in range(6) : "10.0.1.${random_id.target_ip_suffix[i].hex}"]
+  final_target_ips   = length(var.target_ips) > 0 ? var.target_ips : local.default_target_ips
+}
