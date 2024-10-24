@@ -1,0 +1,100 @@
+resource "aws_s3_bucket" "this" {
+  bucket = var.bucket_name
+  acl    = "public-read"
+
+  website {
+    index_document              = var.index_document
+    error_document              = var.error_document
+    redirect_all_requests_to = {
+      host_name = var.host_name
+    }
+  }
+
+  versioning {
+    enabled = true
+  }
+
+  tags = var.tags
+}
+
+resource "aws_s3_bucket_policy" "public_access" {
+  bucket = aws_s3_bucket.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "s3:GetObject"
+        Effect    = "Allow"
+        Resource  = "${aws_s3_bucket.this.arn}/*"
+        Principal = "*"
+      },
+    ]
+  })
+}
+
+    modules/s3_bucket/variables.tf:
+
+hcl
+
+variable "bucket_name" {
+  type        = string
+  description = "The name of the S3 bucket."
+}
+
+variable "index_document" {
+  type        = string
+  description = "The index document for the S3 website."
+  default     = "index.html"
+}
+
+variable "error_document" {
+  type        = string
+  description = "The error document for the S3 website."
+  default     = "error.html"
+}
+
+variable "host_name" {
+  type        = string
+  description = "The hostname to redirect all requests to."
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "A map of tags to add to the resources."
+  default     = {}
+}
+
+    modules/s3_bucket/outputs.tf:
+
+hcl
+
+output "website_endpoint" {
+  value       = aws_s3_bucket.this.website_endpoint
+  description = "The S3 static website URL."
+}
+
+2. Use the local module in your root module (main.tf).
+
+Now in the root main.tf file (outside the modules folder), you can call the local module like this:
+
+hcl
+
+module "s3_website_bucket" {
+  source = "./modules/s3_bucket"
+
+  bucket_name    = "example.com"  # Replace with your bucket name
+  index_document = "index.html"
+  error_document = "error.html"
+  host_name      = "example.com"  # Redirect all requests to example.com
+
+  tags = {
+    Name        = "example.com"
+    Environment = "prod"
+  }
+}
+
+output "s3_bucket_website_endpoint" {
+  value       = module.s3_website_bucket.website_endpoint
+  description = "URL of the hosted website"
+}
