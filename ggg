@@ -1,0 +1,434 @@
+
+resource "aws_s3_bucket" "this" {
+  bucket        = var.bucket_name
+  force_destroy = true
+  tags          = var.tags
+  #checkov:skip=CKV2_AWS_62:Ensure S3 buckets should have event notifications enabled
+  #checkov:skip=CKV2_AWS_6:Ensure that S3 bucket has a Public Access block
+  #checkov:skip=CKV_AWS_144:Ensure that S3 bucket has cross-region replication enabled
+  #checkov:skip=CKV_AWS_18:Ensure the S3 bucket has access logging enabled
+  #checkov:skip=CKV2_AWS_61:Ensure that an S3 bucket has a lifecycle configuration
+}
+
+resource "aws_s3_bucket_versioning" "this" {
+  count  = var.enable_bucket_versioning ? 1 : 0
+  bucket = aws_s3_bucket.this.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
+  count  = var.enable_server_side_encryption ? 1 : 0
+  bucket = aws_s3_bucket.this.bucket
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = var.sse_algorithm
+      kms_master_key_id = var.kms_master_key_id
+    }
+  }
+}
+
+# BUCKET POLICY
+resource "aws_s3_bucket_policy" "this" {
+  count = var.create_bucket_policy ? 1 : 0
+
+  bucket = aws_s3_bucket.this.id
+
+  policy = data.aws_iam_policy_document.this[0].json
+}
+
+data "aws_iam_policy_document" "this" {
+  count = var.create_bucket_policy ? 1 : 0
+
+  dynamic "statement" {
+    for_each = var.bucket_policy_statements
+
+    content {
+      sid       = lookup(statement.value, "sid", null)
+      effect    = lookup(statement.value, "effect", null)
+      actions   = lookup(statement.value, "actions", null)
+      resources = lookup(statement.value, "resources", null)
+
+      dynamic "principals" {
+        for_each = statement.value.principals != null ? statement.value.principals : []
+
+        content {
+          type        = principals.value.principal_type
+          identifiers = principals.value.principal_identifiers
+        }
+      }
+
+      dynamic "condition" {
+        for_each = statement.value.condition != null ? statement.value.condition : []
+
+        content {
+          test     = lookup(condition.value, "condition_test", null)
+          variable = lookup(condition.value, "condition_variable", null)
+          values   = lookup(condition.value, "condition_values", null)
+        }
+      }
+    }
+  }
+}
+
+# BUCKET PUBLIC ACCESS BLOCK
+resource "aws_s3_bucket_public_access_block" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  block_public_acls       = var.block_public_acls
+  block_public_policy     = var.block_public_policy
+  ignore_public_acls      = var.ignore_public_acls
+  restrict_public_buckets = var.restrict_public_buckets
+}
+
+# BUCKET WEBSITE CONFIGURATION
+resource "aws_s3_bucket_website_configuration" "this" {
+  count = var.enable_static_website ? 1 : 0
+
+  bucket = aws_s3_bucket.this.bucket
+
+  dynamic "error_document" {
+    for_each = var.static_website_error_document == null ? [] : [1]
+
+    content {
+      key = var.static_website_error_document["key"]
+    }
+  }
+
+  dynamic "index_document" {
+    for_each = var.static_website_index_document == null ? [] : [1]
+
+    content {
+      suffix = var.static_website_index_document["suffix"]
+    }
+  }
+
+  dynamic "redirect_all_requests_to" {
+    for_each = var.static_website_redirect == null ? [] : [var.static_website_redirect]
+
+    content {
+      host_name = redirect_all_requests_to.value.host_name
+      protocol  = lookup(redirect_all_requests_to.value, "protocol", null)
+    }
+  }
+
+  dynamic "routing_rule" {
+    for_each = var.static_website_routing_rule == null ? [] : var.static_website_routing_rule
+
+    content {
+      redirect {
+        host_name               = lookup(routing_rule.redirect.value, "hostname", null)
+        http_redirect_code      = lookup(routing_rule.redirect.value, "http_redirect_code", null)
+        protocol                = lookup(routing_rule.redirect.value, "protocol", null)
+        replace_key_prefix_with = lookup(routing_rule.redirect.value, "replace_key_prefix_with", null)
+        replace_key_with        = lookup(routing_rule.redirect.value, "replace_key_with", null)
+      }
+
+      dynamic "condition" {
+        for_each = routing_rule.value.condition == null ? [] : [1]
+
+        content {
+          http_error_code_returned_equals = lookup(condition.value, "http_error_code_returned_equals", null)
+          key_prefix_equals               = lookup(condition.value, "key_prefix_equals", null)
+        }
+      }
+    }
+  }
+
+  routing_rules = var.static_website_routing_rules
+}
+
+
+
+output "bucket_arn" {
+  value       = aws_s3_bucket.this.arn
+  description = "ARN of the S3 bucket"
+}
+
+output "bucket_id" {
+  value       = aws_s3_bucket.this.id
+  description = "ID of the S3 bucket"
+}
+
+output "bucket_domain_name" {
+  value       = aws_s3_bucket.this.bucket_domain_name
+  description = "Domain name of this S3 bucket"
+}
+
+output "website_domain" {
+  value       = one(aws_s3_bucket_website_configuration.this[*].website_domain)
+  description = "Domain of the website endpoint. This is used to create Route 53 alias records."
+}
+
+output "website_endpoint" {
+  value       = one(aws_s3_bucket_website_configuration.this[*].website_endpoint)
+  description = "Website endpoint of the S3 bucket"
+}
+
+output "bucket_regional_domain_name" {
+  value = aws_s3_bucket.this.bucket_regional_domain_name
+}
+
+variable "bucket_name" {
+  description = "Remote S3 Bucket Name"
+  type        = string
+  # validation {
+  #   condition     = can(regex("^([a-z0-9]{1}[a-z0-9-]{1,61}[a-z0-9]{1})$", var.bucket_name))
+  #   error_message = "Bucket Name must not be empty and must follow S3 naming rules."
+  # }
+}
+
+variable "enable_bucket_versioning" {
+  type        = bool
+  description = "Whether to enable Bucket Versioning"
+  default     = true
+}
+
+variable "enable_server_side_encryption" {
+  type        = bool
+  description = "Whether to enable Server Side Encryption for Bucket"
+  default     = true
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags for your infrastructure"
+  default     = {}
+}
+
+variable "sse_algorithm" {
+  type        = string
+  description = "Server side encryption algorithm"
+  default     = "AES256"
+}
+
+variable "kms_master_key_id" {
+  type        = string
+  description = "ARN of the KMS key"
+  default     = null
+}
+
+# BUCKET POLICY
+variable "create_bucket_policy" {
+  type        = bool
+  description = "Wheter to create bucket policy"
+  default     = false
+}
+
+variable "bucket_policy_statements" {
+  type = list(
+    object(
+      {
+        sid    = optional(string)
+        effect = string
+        principals = optional(
+          list(
+            object(
+              {
+                principal_type        = string
+                principal_identifiers = list(string)
+              }
+            )
+          )
+        )
+        actions   = list(string)
+        resources = list(string)
+        condition = optional(
+          list(
+            object(
+              {
+                condition_test     = string
+                condition_variable = string
+                condition_values   = list(string)
+              }
+            )
+          )
+        )
+      }
+    )
+  )
+  description = "Text of the policy"
+  default = [
+    {
+      actions    = []
+      condition  = null
+      effect     = null
+      principals = null
+      resources  = []
+      sid        = null
+    }
+  ]
+}
+
+# BUCKET PUBLIC ACCESS BLOCK
+variable "block_public_acls" {
+  type        = bool
+  description = "Whether Amazon S3 should block public ACLs for this bucket"
+  default     = true
+}
+
+variable "block_public_policy" {
+  type        = bool
+  description = "Whether Amazon S3 should block public bucket policies for this bucket."
+  default     = true
+}
+
+variable "ignore_public_acls" {
+  type        = bool
+  description = "Whether Amazon S3 should ignore public ACLs for this bucket"
+  default     = true
+}
+
+variable "restrict_public_buckets" {
+  type        = bool
+  description = "Whether Amazon S3 should restrict public bucket policies for this bucke"
+  default     = true
+}
+
+# BUCKET WEBSITE CONFIGURATION
+
+variable "enable_static_website" {
+  type        = bool
+  description = "Whether to enable static website"
+  default     = false
+}
+
+variable "static_website_error_document" {
+  type = object(
+    {
+      key = string
+    }
+  )
+  description = "Name of the error document for the website"
+  default     = null
+}
+
+variable "static_website_index_document" {
+  type = object(
+    {
+      suffix = string
+    }
+  )
+  description = " Name of the index document for the website."
+  default     = null
+}
+
+variable "static_website_redirect" {
+  type = object(
+    {
+      host_name = string
+      protocol  = string
+    }
+  )
+  description = "Redirect behavior for every request to this bucket's website endpoint"
+  default     = null
+}
+
+variable "static_website_routing_rule" {
+  type = list(
+    object(
+      {
+        condition = object(
+          {
+            http_error_code_returned_equals = bool
+            key_prefix_equals               = bool
+          }
+        )
+        redirect = object(
+          {
+            hostname                = string
+            http_redirect_code      = string
+            protocol                = string
+            replace_key_prefix_with = string
+            replace_key_with        = string
+          }
+        )
+      }
+    )
+  )
+  description = "List of rules that define when a redirect is applied and the redirect behavior"
+  default     = null
+}
+
+variable "static_website_routing_rules" {
+  type        = string
+  description = "JSON array containing routing rules describing redirect behavior and when redirects are applied. Use this parameter when your routing rules contain empty String values"
+  default     = null
+}
+
+
+###################### S3 BUCKET ######################
+module "s3_bucket" {
+  source = "../../modules/s3"
+  providers = {
+    aws = aws.account
+  }
+
+  bucket_name              = var.bucket_name
+  enable_bucket_versioning = true
+  block_public_acls        = false
+  block_public_policy      = false
+  ignore_public_acls       = false
+  restrict_public_buckets  = false
+  enable_static_website    = true
+  static_website_redirect = {
+    host_name = var.redirect_host
+    protocol  = "https"
+  }
+  tags = local.tags
+}
+
+###################### CLOUD FRONT ######################
+module "cloud_front" {
+  source = "../../modules/cloud-front"
+  providers = {
+    aws = aws.account
+  }
+
+  aliases                     = [var.bucket_name]
+  s3_website_endpoint         = module.s3_bucket.website_endpoint
+  bucket_regional_domain_name = var.bucket_name
+  acm_arn                     = var.create_acm ? one(module.aws_ceritification_manager[*].acm_arn) : var.acm_arn
+  tags                        = local.tags
+  depends_on                  = [module.acm_validation]
+}
+
+###################### ROUTE 53 ######################
+module "hosted_zone" {
+  source = "../../modules/hosted-zone"
+
+  domain_name = var.bucket_name
+  record      = module.cloud_front.domain_name
+  zone_id     = var.hosted_zone_id
+}
+
+module "acm_validation" {
+  source = "../../modules/hosted-zone"
+  count  = var.create_domain_validation_options ? 1 : 0
+
+  create_record             = false
+  domain_validation_options = module.aws_ceritification_manager[0].domain_validation_options
+}
+
+###################### ACM ######################
+module "aws_ceritification_manager" {
+  source = "../../modules/certificate-manager"
+  count  = var.create_acm ? 1 : 0
+  providers = {
+    aws = aws.account
+  }
+
+  domain_name   = var.redirect_host
+  other_domains = ["*.${var.redirect_host}"]
+}
+
+output "S3_arn" {
+  value = module.s3_bucket.bucket_arn
+}
+
+
+project       = "Daaree"
+createdBy     = "Terraform"
+bucket_name   = "assest.mickleissa.com"
+redirect_host = "mickleissa.com"
